@@ -11,7 +11,6 @@ namespace BFtools
 		private readonly string userProfilePath = Environment.GetEnvironmentVariable("userprofile") + @"\Documents\Battlefield 3\settings\PROF_SAVE_profile";
 		private readonly string screenshotsPath = Environment.GetEnvironmentVariable("userprofile") + @"\Documents\Battlefield 3\screenshots";
 		private readonly string tempSettings = Environment.GetEnvironmentVariable("temp") + @"\bf3.ini";
-		private readonly string dxdiagOutput = Environment.GetEnvironmentVariable("temp") + @"\dxdiag.tmp";
 
 		private readonly RegistryKey key;
 
@@ -21,11 +20,7 @@ namespace BFtools
         {
             InitializeComponent();
 
-			key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Wow6432Node\EA Games\Battlefield 3", true);  // 64bit
-			if (key == null || key.GetValue("Install Dir") == null)
-				key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\EA GAMES\Battlefield 3", true);  // 32bit
-			if (key == null || key.GetValue("Install Dir") == null)
-				key = null;  // not found
+	        key = Utility.GetRegistryKey();
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -81,21 +76,16 @@ namespace BFtools
 
 	        if (comboBox3.SelectedIndex == -1)
 	        {
-				try
+				float DXversion = Utility.GetDirectXVersion();
+		
+				if (DXversion >= 11)
 				{
-					int DXversion = CheckDxVersion();
-
-					switch (DXversion)
-					{
-						case 10:
-							comboBox3.SelectedIndex = 0;
-							break;
-						case 11:
-							comboBox3.SelectedIndex = 1;
-							break;
-					}
+					comboBox3.SelectedIndex = 1;
 				}
-				catch {}
+				else if (DXversion >= 10)
+				{
+					comboBox3.SelectedIndex = 0;
+				}
 	        }
         }
 
@@ -120,8 +110,8 @@ namespace BFtools
             using (StreamWriter file = new StreamWriter(BFdirectory + @"\user.cfg", false))
             {
                 file.WriteLine("GameTime.MaxVariableFps " + numericUpDown1.Value);
-				file.WriteLine("UI.DrawEnable " + BoolToInt(checkBox4.Checked));
-				file.WriteLine("Render.DrawFPS " + BoolToInt(checkBox1.Checked));
+				file.WriteLine("UI.DrawEnable " + checkBox4.Checked.ToInt());
+				file.WriteLine("Render.DrawFPS " + checkBox1.Checked.ToInt());
 
 	            if (checkBox8.Checked)
                 {
@@ -155,10 +145,10 @@ namespace BFtools
                 }
 
 				file.WriteLine("RenderDevice.ForceRenderAheadLimit " + (comboBox4.SelectedIndex - 1));
-				file.WriteLine("WorldRender.FxaaEnable " + BoolToInt(checkBox3.Checked));
-				file.WriteLine("WorldRender.DxDeferredCsPathEnable " + BoolToInt(checkBox5.Checked));
-				file.WriteLine("WorldRender.TransparencyShadowmapsEnable " + BoolToInt(checkBox9.Checked));
-				file.WriteLine("WorldRender.SpotlightShadowmapEnable " + BoolToInt(checkBox2.Checked));
+				file.WriteLine("WorldRender.FxaaEnable " + checkBox3.Checked.ToInt());
+				file.WriteLine("WorldRender.DxDeferredCsPathEnable " + checkBox5.Checked.ToInt());
+				file.WriteLine("WorldRender.TransparencyShadowmapsEnable " + checkBox9.Checked.ToInt());
+				file.WriteLine("WorldRender.SpotlightShadowmapEnable " + checkBox2.Checked.ToInt());
 
 	            switch (comboBox2.SelectedIndex)
                 {
@@ -210,43 +200,35 @@ namespace BFtools
 
             try
             {
-	            Process BFstart = new Process
-	            {
-		            StartInfo = { FileName = BFdirectory + @"\bf3.exe" }
-	            };
-	            BFstart.Start();
+	            Process.Start(BFdirectory + @"\bf3.exe");
             }
-            catch {}
+            catch
+            {
+	            // ignored
+            }
         }
 
         private void button2_Click(object sender, EventArgs e)
         {
-            try
-            {
-                Process[] OriginKill = Process.GetProcessesByName("Origin");
-				foreach (Process origin in OriginKill)
-				{
-					origin.Kill();
-				}
-            }
-            catch {}
+			// kill Origin
+			Process[] Origins = Process.GetProcessesByName("Origin");
+			Utility.KillProcesses(Origins, true);
 
-            try
-            {
-				Process[] BFkill = Process.GetProcessesByName("bf3");
+			// restart BF3
+			Process BFstart = new Process();
+			Process[] Bf3 = Process.GetProcessesByName("bf3");
 
-				Process BFstart = new Process();
-                BFstart.StartInfo = BFkill[0].StartInfo;
+			if (Bf3.Length > 0)
+			{
+				BFstart.StartInfo = Bf3[0].StartInfo;
+				Utility.KillProcesses(Bf3, true);
+			}
+			else
+			{
+				BFstart.StartInfo.FileName = BFdirectory + @"\bf3.exe";
+			}
 
-	            foreach (Process bf in BFkill)
-	            {
-					bf.Kill();
-		            bf.WaitForExit();
-	            }
-
-                BFstart.Start();
-            }
-            catch {}
+			BFstart.Start();
         }
 
         private void ReadCFG()
@@ -308,70 +290,16 @@ namespace BFtools
             }
 
             if (!File.Exists(BFdirectory + @"\user.cfg"))
-            {
-                FileStream fs = File.Create(BFdirectory + @"\user.cfg");
-                fs.Close();
+			{
+				File.Create(BFdirectory + @"\user.cfg");
             }
 
-	        Process notepad = new Process
-	        {
-		        StartInfo =
-		        {
-			        FileName = "notepad.exe",
-			        Arguments = BFdirectory + @"\user.cfg"
-		        }
-	        };
-	        notepad.Start();
+			Process.Start("notepad.exe", BFdirectory + @"\user.cfg");
         }
 
         private void button7_Click(object sender, EventArgs e)
         {
-	        Process explorer = new Process
-	        {
-		        StartInfo =
-		        {
-			        FileName = "explorer.exe",
-			        Arguments = screenshotsPath
-		        }
-	        };
-	        explorer.Start();
+			Process.Start("explorer.exe", screenshotsPath);
         }
-
-        private int CheckDxVersion()
-        {
-	        Process dxdiag = new Process
-	        {
-		        StartInfo =
-		        {
-			        FileName = "dxdiag.exe",
-					Arguments = "/t " + dxdiagOutput
-		        }
-	        };
-	        dxdiag.Start();
-            dxdiag.WaitForExit();
-
-            if (File.Exists(Environment.GetEnvironmentVariable("temp") + @"\dxdiag.tmp"))
-            {
-				string[] lines = File.ReadAllLines(dxdiagOutput);
-                foreach (string line in lines)
-				{
-					if (line.Contains("DirectX "))
-					{
-						if (line.Contains("DirectX 9")) return 9;
-						if (line.Contains("DirectX 10")) return 10;
-						if (line.Contains("DirectX 11")) return 11;
-						if (line.Contains("DirectX 12")) return 11;
-						if (line.Contains("DirectX 13")) return 11;
-					}
-				}
-            }
-
-            return 0;
-        }
-
-		private static string BoolToInt(bool value)
-		{
-			return (value) ? "1" : "0";
-		}
     }
 }
